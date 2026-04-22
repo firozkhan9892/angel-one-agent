@@ -22,6 +22,7 @@ from modules.indicators import IndicatorEngine
 from modules.signal_generator import SignalGenerator
 from modules.telegram_notifier import TelegramNotifier
 from modules.telegram_commands import TelegramCommandHandler
+from modules.telegram_interactive_commands import TelegramInteractiveCommands
 from modules.database import Database
 from modules.portfolio_manager import PortfolioManager
 from modules.risk_manager import RiskManager
@@ -52,6 +53,7 @@ def main():
     generator = SignalGenerator()
     telegram = TelegramNotifier(os.getenv("TELEGRAM_BOT_TOKEN"), os.getenv("TELEGRAM_CHAT_ID"))
     cmd_handler = TelegramCommandHandler(os.getenv("TELEGRAM_BOT_TOKEN"), os.getenv("TELEGRAM_CHAT_ID"))
+    interactive_cmd = TelegramInteractiveCommands(os.getenv("TELEGRAM_BOT_TOKEN"), os.getenv("TELEGRAM_CHAT_ID"))
     db = Database()
     portfolio = PortfolioManager(db)
     risk_mgr = RiskManager()
@@ -85,15 +87,26 @@ def main():
             continue
 
         try:
-            # Check for trade confirmations
-            updates = cmd_handler.get_updates(update_offset)
+            # Check for Telegram updates (commands and confirmations)
+            updates = interactive_cmd.get_updates(update_offset, timeout=5)
             for update in updates:
                 update_offset = update['update_id'] + 1
+
+                # Handle trade confirmations
                 if 'callback_query' in update:
                     query = update['callback_query']
                     approved_trade = cmd_handler.handle_callback_query(query['id'], query['data'], telegram)
                     if approved_trade:
                         logger.info(f"Trade approved: {approved_trade['symbol']} {approved_trade['action']}")
+
+                # Handle text commands
+                elif 'message' in update:
+                    message = update['message']
+                    if 'text' in message:
+                        reply = interactive_cmd.process_message(message, portfolio, dashboard, watchlist, sentiment, symbol_mgr)
+                        if reply:
+                            interactive_cmd.send_reply(reply, message['message_id'])
+                            logger.info(f"Command processed: {message['text']}")
 
             scan_count += 1
             logger.info(f"Scan #{scan_count}")
