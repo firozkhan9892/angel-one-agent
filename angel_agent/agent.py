@@ -24,6 +24,9 @@ from modules.telegram_notifier import TelegramNotifier
 from modules.database import Database
 from modules.portfolio_manager import PortfolioManager
 from modules.risk_manager import RiskManager
+from modules.price_predictor import PricePredictor
+from modules.backtester import Backtester
+from modules.news_integrator import NewsIntegrator
 
 MARKET_OPEN = (9, 15)
 MARKET_CLOSE = (15, 30)
@@ -36,7 +39,7 @@ def is_market_open():
     return MARKET_OPEN <= t <= MARKET_CLOSE
 
 def main():
-    logger.info("🚀 Angel One Trading Agent Started")
+    logger.info("Angel One Trading Agent Started")
 
     connector = AngelConnector()
     engine = IndicatorEngine()
@@ -45,26 +48,30 @@ def main():
     db = Database()
     portfolio = PortfolioManager(db)
     risk_mgr = RiskManager()
+    predictor = PricePredictor(lookback=20)
+    backtester = Backtester()
+    news = NewsIntegrator(os.getenv("FINNHUB_API_KEY", ""))
 
     if not connector.login():
-        logger.error("❌ Login failed")
+        logger.error("Login failed")
         telegram.send_error("Login failed")
         return
 
-    logger.info("✅ Login successful")
+    logger.info("Login successful")
     telegram.send_startup(os.getenv("SYMBOL", "RELIANCE"), os.getenv("INTERVAL", "FIVE_MINUTE"))
 
     scan_count = 0
+    last_news_check = 0
 
     while True:
         if not is_market_open():
-            logger.info("🕐 Market closed, waiting...")
+            logger.info("Market closed, waiting...")
             time.sleep(300)
             continue
 
         try:
             scan_count += 1
-            logger.info(f"🔍 Scan #{scan_count}")
+            logger.info(f"Scan #{scan_count}")
 
             symbol = os.getenv("SYMBOL", "RELIANCE")
             token = os.getenv("SYMBOL_TOKEN", "2885")
@@ -74,19 +81,24 @@ def main():
             # Fetch data
             df = connector.get_historical_data(token, exchange, interval, days=5)
             if not df:
-                logger.warning("⚠️ No data received")
+                logger.warning("No data received")
                 time.sleep(60)
                 continue
 
             # Compute indicators
             df = IndicatorEngine.compute_all(df)
 
-            # Generate signal
+            # Get LSTM prediction
+            lstm_score = predictor.get_prediction_score(df)
+            logger.info(f"LSTM prediction score: {lstm_score}")
+
+            # Generate signal with LSTM boost
             signal = generator.generate(df)
+            signal.score = min(100, max(-100, signal.score + lstm_score))
 
             # Check risk
             if not risk_mgr.should_trade():
-                logger.warning("⚠️ Trading paused - drawdown threshold exceeded")
+                logger.warning("Trading paused - drawdown threshold exceeded")
                 telegram.send_error("Trading paused: Drawdown threshold exceeded")
                 time.sleep(300)
                 continue
@@ -105,15 +117,28 @@ def main():
 
             # Send alert
             telegram.send_signal(signal)
-            logger.info(f"✅ Signal: {signal.action} @ {signal.ltp}")
+            logger.info(f"Signal: {signal.action} @ {signal.ltp}")
+
+            # Check news every 30 minutes
+            if scan_count - last_news_check >= 6:
+                news_alert = news.get_news_alert(symbol, os.getenv("FINNHUB_API_KEY", ""))
+                if news_alert:
+                    telegram.send_message(news_alert)
+                last_news_check = scan_count
+
+            # Send performance metrics every hour
+            if scan_count % 12 == 0:
+                metrics = backtester.get_portfolio_performance(days=7)
+                perf_msg = f"7-Day Performance:\nSignals: {metrics['total_signals']}\nWin Rate: {metrics['win_rate']}%\nP&L: {metrics['total_pnl']}"
+                telegram.send_message(perf_msg)
 
             # Wait for next candle
             sleep_time = int(os.getenv("INTERVAL_SLEEP", "300"))
-            logger.info(f"⏳ Next scan in {sleep_time//60} minutes")
+            logger.info(f"Next scan in {sleep_time//60} minutes")
             time.sleep(sleep_time)
 
         except Exception as e:
-            logger.error(f"❌ Error: {e}")
+            logger.error(f"Error: {e}")
             telegram.send_error(f"Error: {str(e)}")
             time.sleep(60)
 
