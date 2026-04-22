@@ -1,2 +1,2 @@
-web: cd dashboard && python app.py
-worker: cd angel_agent && python agent.py
+web: python dashboard/app.py
+worker: python angel_agent/agent.py
