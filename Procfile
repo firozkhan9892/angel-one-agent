@@ -1,1 +1,1 @@
-worker: python angel_agent/agent.py
+worker: python run_agent.py
