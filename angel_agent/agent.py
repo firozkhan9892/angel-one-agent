@@ -81,13 +81,8 @@ def main():
     update_offset = 0
 
     while True:
-        if not is_market_open():
-            logger.info("Market closed, waiting...")
-            time.sleep(300)
-            continue
-
         try:
-            # Check for Telegram updates (commands and confirmations)
+            # Check for Telegram updates (commands and confirmations) - ALWAYS, even outside market hours
             updates = interactive_cmd.get_updates(update_offset, timeout=5)
             for update in updates:
                 update_offset = update['update_id'] + 1
@@ -107,6 +102,17 @@ def main():
                         if reply:
                             interactive_cmd.send_reply(reply, message['message_id'])
                             logger.info(f"Command processed: {message['text']}")
+
+        except Exception as e:
+            logger.error(f"Error processing Telegram updates: {e}")
+
+        # Skip trading logic if market is closed
+        if not is_market_open():
+            logger.info("Market closed, waiting...")
+            time.sleep(300)
+            continue
+
+        try:
 
             scan_count += 1
             logger.info(f"Scan #{scan_count}")
