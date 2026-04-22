@@ -21,6 +21,7 @@ from modules.angel_connector import AngelConnector
 from modules.indicators import IndicatorEngine
 from modules.signal_generator import SignalGenerator
 from modules.telegram_notifier import TelegramNotifier
+from modules.telegram_commands import TelegramCommandHandler
 from modules.database import Database
 from modules.portfolio_manager import PortfolioManager
 from modules.risk_manager import RiskManager
@@ -44,7 +45,8 @@ def main():
     connector = AngelConnector()
     engine = IndicatorEngine()
     generator = SignalGenerator()
-    telegram = TelegramNotifier()
+    telegram = TelegramNotifier(os.getenv("TELEGRAM_BOT_TOKEN"), os.getenv("TELEGRAM_CHAT_ID"))
+    cmd_handler = TelegramCommandHandler(os.getenv("TELEGRAM_BOT_TOKEN"), os.getenv("TELEGRAM_CHAT_ID"))
     db = Database()
     portfolio = PortfolioManager(db)
     risk_mgr = RiskManager()
@@ -62,6 +64,7 @@ def main():
 
     scan_count = 0
     last_news_check = 0
+    update_offset = 0
 
     while True:
         if not is_market_open():
@@ -70,6 +73,16 @@ def main():
             continue
 
         try:
+            # Check for trade confirmations
+            updates = cmd_handler.get_updates(update_offset)
+            for update in updates:
+                update_offset = update['update_id'] + 1
+                if 'callback_query' in update:
+                    query = update['callback_query']
+                    approved_trade = cmd_handler.handle_callback_query(query['id'], query['data'], telegram)
+                    if approved_trade:
+                        logger.info(f"Trade approved: {approved_trade['symbol']} {approved_trade['action']}")
+
             scan_count += 1
             logger.info(f"Scan #{scan_count}")
 
@@ -106,17 +119,30 @@ def main():
             # Save to database
             db.save_signal(symbol, signal.ltp, signal.action, signal.score, signal.confidence, signal.target, signal.sl)
 
-            # Handle positions
-            if signal.action == "BUY":
+            # Request trade confirmation before executing
+            if signal.action in ["BUY", "SELL"]:
                 qty = risk_mgr.calculate_position_size(signal.ltp, signal.sl)
-                portfolio.open_position(symbol, qty, signal.ltp, signal)
-            elif signal.action == "SELL":
-                result = portfolio.close_position(symbol, signal.ltp)
-                if result:
-                    risk_mgr.update_balance(result.get('pnl', 0))
+                telegram.send_trade_confirmation(symbol, signal.action, qty, signal.ltp, signal.target, signal.sl)
+                logger.info(f"Confirmation requested for {signal.action} {symbol}")
+                time.sleep(30)
 
-            # Send alert
-            telegram.send_signal(signal)
+                # Check if trade was approved
+                approved = cmd_handler.get_approved_trade()
+                if approved:
+                    if signal.action == "BUY":
+                        portfolio.open_position(symbol, approved['qty'], approved['price'], signal)
+                        telegram.send_position_update(symbol, "BUY", approved['qty'], approved['price'])
+                    elif signal.action == "SELL":
+                        result = portfolio.close_position(symbol, approved['price'])
+                        if result:
+                            risk_mgr.update_balance(result.get('pnl', 0))
+                            telegram.send_position_update(symbol, "SELL", approved['qty'], approved['price'], result.get('pnl', 0))
+                else:
+                    logger.info(f"Trade rejected or not confirmed: {signal.action}")
+                    telegram.send_message(f"Trade not confirmed: {signal.action} {symbol}")
+            else:
+                telegram.send_signal(signal)
+
             logger.info(f"Signal: {signal.action} @ {signal.ltp}")
 
             # Check news every 30 minutes
