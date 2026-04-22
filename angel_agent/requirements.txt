@@ -6,3 +6,4 @@ logzero==1.7.0
 schedule==1.2.1
 python-dotenv==1.0.0
 beautifulsoup4==4.12.2
+flask==2.3.0
