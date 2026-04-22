@@ -1,1 +1,1 @@
-worker: cd angel_agent && python agent.py
+worker: python angel_agent/agent.py
