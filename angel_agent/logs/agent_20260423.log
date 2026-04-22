@@ -1,0 +1,6 @@
+[I 260423 02:07:32 database:93] Database initialized successfully
+[I 260423 02:07:32 risk_manager:30] Risk Manager initialized: Account=10000.0, Risk/Trade=2.0%
+[I 260423 02:07:32 smartConnect:124] in pool
+[I 260423 02:10:27 database:93] Database initialized successfully
+[I 260423 02:10:27 risk_manager:30] Risk Manager initialized: Account=10000.0, Risk/Trade=2.0%
+[I 260423 02:10:27 smartConnect:124] in pool
