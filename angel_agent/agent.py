@@ -84,12 +84,16 @@ def main():
         try:
             # Check for Telegram updates (commands and confirmations) - ALWAYS, even outside market hours
             updates = interactive_cmd.get_updates(update_offset, timeout=5)
+            if updates:
+                logger.info(f"Received {len(updates)} Telegram updates")
+
             for update in updates:
                 update_offset = update['update_id'] + 1
 
                 # Handle trade confirmations
                 if 'callback_query' in update:
                     query = update['callback_query']
+                    logger.info(f"Callback query: {query['data']}")
                     approved_trade = cmd_handler.handle_callback_query(query['id'], query['data'], telegram)
                     if approved_trade:
                         logger.info(f"Trade approved: {approved_trade['symbol']} {approved_trade['action']}")
@@ -98,13 +102,17 @@ def main():
                 elif 'message' in update:
                     message = update['message']
                     if 'text' in message:
+                        logger.info(f"Text message received: {message['text']}")
                         reply = interactive_cmd.process_message(message, portfolio, dashboard, watchlist, sentiment, symbol_mgr)
                         if reply:
+                            logger.info(f"Sending reply: {reply[:100]}")
                             interactive_cmd.send_reply(reply, message['message_id'])
                             logger.info(f"Command processed: {message['text']}")
+                        else:
+                            logger.warning(f"No reply generated for: {message['text']}")
 
         except Exception as e:
-            logger.error(f"Error processing Telegram updates: {e}")
+            logger.error(f"Error processing Telegram updates: {e}", exc_info=True)
 
         # Skip trading logic if market is closed
         if not is_market_open():

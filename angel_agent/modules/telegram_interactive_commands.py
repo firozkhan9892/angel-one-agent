@@ -180,11 +180,17 @@ Symbols:
 
     def process_message(self, message, portfolio, dashboard, watchlist, sentiment, symbol_mgr):
         """Process incoming message and return reply"""
-        if 'text' not in message:
-            return None
+        try:
+            if 'text' not in message:
+                return None
 
-        text = message['text']
-        message_id = message['message_id']
+            text = message['text']
+            message_id = message['message_id']
 
-        reply = self.handle_text_command(text, message_id, portfolio, dashboard, watchlist, sentiment, symbol_mgr)
-        return reply
+            logger.info(f"Processing command: {text}")
+            reply = self.handle_text_command(text, message_id, portfolio, dashboard, watchlist, sentiment, symbol_mgr)
+            logger.info(f"Reply generated: {reply[:50] if reply else 'None'}")
+            return reply
+        except Exception as e:
+            logger.error(f"Error processing message: {e}")
+            return f"Error: {str(e)}"
