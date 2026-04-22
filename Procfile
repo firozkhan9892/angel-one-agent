@@ -1,2 +1,2 @@
-web: gunicorn --bind 0.0.0.0:$PORT dashboard.app:app
-worker: python angel_agent/agent.py
+web: cd dashboard && python app.py
+worker: cd angel_agent && python agent.py
