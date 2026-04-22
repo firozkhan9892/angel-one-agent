@@ -10,18 +10,25 @@ import os
 import sys
 from logzero import logger
 
+# Add angel_agent to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'angel_agent'))
 
-from angel_agent.modules.database import Database
-from angel_agent.modules.portfolio_manager import PortfolioManager
-from angel_agent.modules.risk_manager import RiskManager
+from modules.database import Database
+from modules.portfolio_manager import PortfolioManager
+from modules.risk_manager import RiskManager
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 CORS(app)
 
-db = Database()
-portfolio = PortfolioManager(db)
-risk_mgr = RiskManager()
+try:
+    db = Database()
+    portfolio = PortfolioManager(db)
+    risk_mgr = RiskManager()
+except Exception as e:
+    logger.warning(f"Could not initialize services: {e}")
+    db = None
+    portfolio = None
+    risk_mgr = None
 
 
 @app.route('/')
