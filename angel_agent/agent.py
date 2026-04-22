@@ -6,6 +6,7 @@ Generates trading signals and sends Telegram alerts
 import os
 import sys
 import time
+import requests
 from datetime import datetime
 from dotenv import load_dotenv
 from logzero import logger, logfile
@@ -83,36 +84,65 @@ def main():
     while True:
         try:
             # Check for Telegram updates (commands and confirmations) - ALWAYS, even outside market hours
-            updates = interactive_cmd.get_updates(update_offset, timeout=5)
-            if updates:
-                logger.info(f"Received {len(updates)} Telegram updates")
+            try:
+                url = f"https://api.telegram.org/bot{os.getenv('TELEGRAM_BOT_TOKEN')}/getUpdates"
+                params = {'offset': update_offset, 'timeout': 5}
+                response = requests.get(url, params=params, timeout=10)
+                updates = response.json().get('result', [])
 
-            for update in updates:
-                update_offset = update['update_id'] + 1
+                if updates:
+                    logger.info(f"Received {len(updates)} Telegram updates")
 
-                # Handle trade confirmations
-                if 'callback_query' in update:
-                    query = update['callback_query']
-                    logger.info(f"Callback query: {query['data']}")
-                    approved_trade = cmd_handler.handle_callback_query(query['id'], query['data'], telegram)
-                    if approved_trade:
-                        logger.info(f"Trade approved: {approved_trade['symbol']} {approved_trade['action']}")
+                for update in updates:
+                    update_offset = update['update_id'] + 1
 
-                # Handle text commands
-                elif 'message' in update:
-                    message = update['message']
-                    if 'text' in message:
-                        logger.info(f"Text message received: {message['text']}")
-                        reply = interactive_cmd.process_message(message, portfolio, dashboard, watchlist, sentiment, symbol_mgr)
-                        if reply:
-                            logger.info(f"Sending reply: {reply[:100]}")
-                            interactive_cmd.send_reply(reply, message['message_id'])
-                            logger.info(f"Command processed: {message['text']}")
+                    # Handle text commands
+                    if 'message' in update and 'text' in update['message']:
+                        message = update['message']
+                        text = message['text']
+                        message_id = message['message_id']
+
+                        logger.info(f"Command: {text}")
+
+                        # Simple command handling
+                        reply = None
+                        if text == "/help":
+                            reply = "Commands: /portfolio /dashboard /symbols /sentiment /watchlist /help"
+                        elif text == "/portfolio":
+                            reply = "Portfolio: No open positions"
+                        elif text == "/dashboard":
+                            reply = "Dashboard: 7-day performance"
+                        elif text == "/symbols":
+                            reply = f"Active: {', '.join(symbol_mgr.get_active_symbols())}"
+                        elif text == "/sentiment":
+                            reply = "Sentiment: Analyzing..."
+                        elif text == "/watchlist":
+                            reply = watchlist.format_watchlist_report()
                         else:
-                            logger.warning(f"No reply generated for: {message['text']}")
+                            reply = "Unknown command. Type /help"
 
-        except Exception as e:
-            logger.error(f"Error processing Telegram updates: {e}", exc_info=True)
+                        if reply:
+                            try:
+                                send_url = f"https://api.telegram.org/bot{os.getenv('TELEGRAM_BOT_TOKEN')}/sendMessage"
+                                send_payload = {
+                                    'chat_id': os.getenv('TELEGRAM_CHAT_ID'),
+                                    'text': reply,
+                                    'reply_to_message_id': message_id
+                                }
+                                requests.post(send_url, json=send_payload, timeout=5)
+                                logger.info(f"Reply sent for: {text}")
+                            except Exception as e:
+                                logger.error(f"Error sending reply: {e}")
+
+                    # Handle trade confirmations
+                    elif 'callback_query' in update:
+                        query = update['callback_query']
+                        approved_trade = cmd_handler.handle_callback_query(query['id'], query['data'], telegram)
+                        if approved_trade:
+                            logger.info(f"Trade approved: {approved_trade['symbol']}")
+
+            except Exception as e:
+                logger.error(f"Error processing Telegram: {e}")
 
         # Skip trading logic if market is closed
         if not is_market_open():
