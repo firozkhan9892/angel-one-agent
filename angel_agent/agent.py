@@ -144,13 +144,17 @@ def main():
             except Exception as e:
                 logger.error(f"Error processing Telegram: {e}")
 
-        # Skip trading logic if market is closed
-        if not is_market_open():
-            logger.info("Market closed, waiting...")
-            time.sleep(300)
-            continue
+            # Skip trading logic if market is closed
+            if not is_market_open():
+                logger.info("Market closed, waiting...")
+                time.sleep(300)
+                continue
 
-        try:
+            # Skip trading logic if market is closed
+            if not is_market_open():
+                logger.info("Market closed, waiting...")
+                time.sleep(300)
+                continue
 
             scan_count += 1
             logger.info(f"Scan #{scan_count}")
