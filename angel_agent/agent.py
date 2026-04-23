@@ -13,6 +13,7 @@ from logzero import logger, logfile
 
 # Setup logging
 os.makedirs("logs", exist_ok=True)
+os.makedirs("output", exist_ok=True)
 logfile(f"logs/agent_{datetime.now().strftime('%Y%m%d')}.log", maxBytes=5_000_000, backupCount=3)
 
 load_dotenv()
@@ -143,12 +144,6 @@ def main():
 
             except Exception as e:
                 logger.error(f"Error processing Telegram: {e}")
-
-            # Skip trading logic if market is closed
-            if not is_market_open():
-                logger.info("Market closed, waiting...")
-                time.sleep(300)
-                continue
 
             # Skip trading logic if market is closed
             if not is_market_open():
